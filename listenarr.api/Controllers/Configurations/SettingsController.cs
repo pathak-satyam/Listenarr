@@ -24,6 +24,7 @@ using Listenarr.Domain.Models;
 using Listenarr.Domain.Models.Configurations;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.Caching.Memory;
 using System.Text.Json;
 
 namespace Listenarr.Api.Controllers.Configurations
@@ -36,15 +37,18 @@ namespace Listenarr.Api.Controllers.Configurations
         private readonly IConfigurationService _configurationService;
         private readonly ILogger<SettingsController> _logger;
         private readonly IHubContext<SettingsHub> _settingsHub;
+        private readonly IMemoryCache? _cache;
 
         public SettingsController(
             IConfigurationService configurationService,
             ILogger<SettingsController> logger,
-            IHubContext<SettingsHub> settingsHub)
+            IHubContext<SettingsHub> settingsHub,
+            IMemoryCache? cache = null)
         {
             _configurationService = configurationService;
             _logger = logger;
             _settingsHub = settingsHub;
+            _cache = cache;
         }
 
         /// <summary>
@@ -83,6 +87,7 @@ namespace Listenarr.Api.Controllers.Configurations
             {
                 _logger.LogDebug("Saving application settings");
                 await _configurationService.SaveApplicationSettingsAsync(settings);
+                _cache?.Remove("default-search-region");
 
                 var savedSettings = PrepareApplicationSettingsResponse(await _configurationService.GetApplicationSettingsAsync());
                 savedSettings.AdminUsername = null;

@@ -20,6 +20,7 @@ using System.Text.RegularExpressions;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Caching.Memory;
 using Listenarr.Application.Common;
 using Listenarr.Application.Interfaces;
 using Listenarr.Application.Metadata;
@@ -41,6 +42,7 @@ namespace Listenarr.Api.Controllers
         private readonly IImageCacheService? _imageCacheService;
         private readonly MetadataConverters _metadataConverters;
         private readonly IConfigurationService? _configurationService;
+        private readonly IMemoryCache? _cache;
 
         public SearchController(
             ISearchService searchService,
@@ -49,7 +51,8 @@ namespace Listenarr.Api.Controllers
             IAudiobookMetadataService metadataService,
             IImageCacheService? imageCacheService = null,
             MetadataConverters? metadataConverters = null,
-            IConfigurationService? configurationService = null)
+            IConfigurationService? configurationService = null,
+            IMemoryCache? cache = null)
         {
             _searchService = searchService;
             _logger = logger;
@@ -58,6 +61,7 @@ namespace Listenarr.Api.Controllers
             _imageCacheService = imageCacheService;
             _metadataConverters = metadataConverters ?? new MetadataConverters(imageCacheService, Microsoft.Extensions.Logging.Abstractions.NullLogger<MetadataConverters>.Instance);
             _configurationService = configurationService;
+            _cache = cache;
         }
 
         private string BuildApiImagePath(string identifier, string? sourceUrl = null)
@@ -143,6 +147,12 @@ namespace Listenarr.Api.Controllers
                 return requestedRegion.Trim();
             }
 
+            const string cacheKey = "default-search-region";
+            if (_cache != null && _cache.TryGetValue(cacheKey, out string? cachedRegion) && cachedRegion != null)
+            {
+                return cachedRegion;
+            }
+
             if (_configurationService != null)
             {
                 try
@@ -150,7 +160,9 @@ namespace Listenarr.Api.Controllers
                     var settings = await _configurationService.GetApplicationSettingsAsync().ConfigureAwait(false);
                     if (!string.IsNullOrWhiteSpace(settings?.DefaultSearchRegion))
                     {
-                        return settings.DefaultSearchRegion.Trim();
+                        var resolved = settings.DefaultSearchRegion.Trim();
+                        _cache?.Set(cacheKey, resolved, TimeSpan.FromSeconds(60));
+                        return resolved;
                     }
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
@@ -220,6 +232,43 @@ namespace Listenarr.Api.Controllers
             }
         }
 
+        private async Task NormalizeMetadataSearchResultImagesAsync(IEnumerable<MetadataSearchResult>? results)
+        {
+            if (_imageCacheService == null || results == null) return;
+
+            foreach (var r in results)
+            {
+                try
+                {
+                    if (r == null) continue;
+                    if (string.IsNullOrWhiteSpace(r.Asin)) continue;
+
+                    var cached = await _imageCacheService.GetCachedImagePathAsync(r.Asin);
+                    if (!string.IsNullOrWhiteSpace(cached))
+                    {
+                        r.ImageUrl = BuildApiImagePath(r.Asin);
+                        continue;
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(r.ImageUrl) && (r.ImageUrl.StartsWith("http://") || r.ImageUrl.StartsWith("https://")))
+                    {
+                        var downloaded = await _imageCacheService.DownloadAndCacheImageAsync(r.ImageUrl, r.Asin);
+                        r.ImageUrl = !string.IsNullOrWhiteSpace(downloaded)
+                            ? BuildApiImagePath(r.Asin)
+                            : BuildApiImagePath(r.Asin, r.ImageUrl);
+                    }
+                    else if (!string.IsNullOrWhiteSpace(r.Asin))
+                    {
+                        r.ImageUrl = BuildApiImagePath(r.Asin);
+                    }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
+                    _logger.LogWarning(ex, "Failed to normalize image for metadata result ASIN {Asin}", r.Asin);
+                }
+            }
+        }
+
 
         private List<object> SimplifySearchResults(List<SearchResult> results)
         {
@@ -285,41 +334,7 @@ namespace Listenarr.Api.Controllers
                     var language = string.IsNullOrWhiteSpace(req.Language) ? null : req.Language;
                     var results = await _searchService.IntelligentSearchAsync(q, region: region, language: language, ct: HttpContext.RequestAborted) ?? new List<MetadataSearchResult>();
 
-                    // Normalize images for metadata results so the SPA receives local /api/v{version}/images/{asin} when possible
-                    if (_imageCacheService != null && results != null)
-                    {
-                        foreach (var r in results)
-                        {
-                            try
-                            {
-                                if (r == null) continue;
-                                if (string.IsNullOrWhiteSpace(r.Asin)) continue;
-
-                                var cached = await _imageCacheService.GetCachedImagePathAsync(r.Asin);
-                                if (!string.IsNullOrWhiteSpace(cached))
-                                {
-                                    r.ImageUrl = BuildApiImagePath(r.Asin);
-                                    continue;
-                                }
-
-                                if (!string.IsNullOrWhiteSpace(r.ImageUrl) && (r.ImageUrl.StartsWith("http://") || r.ImageUrl.StartsWith("https://")))
-                                {
-                                    var downloaded = await _imageCacheService.DownloadAndCacheImageAsync(r.ImageUrl, r.Asin);
-                                    r.ImageUrl = !string.IsNullOrWhiteSpace(downloaded)
-                                        ? BuildApiImagePath(r.Asin)
-                                        : BuildApiImagePath(r.Asin, r.ImageUrl);
-                                }
-                                else if (!string.IsNullOrWhiteSpace(r.Asin))
-                                {
-                                    r.ImageUrl = BuildApiImagePath(r.Asin);
-                                }
-                            }
-                            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
-                            {
-                                _logger.LogWarning(ex, "Failed to normalize image for metadata result ASIN {Asin}", r.Asin);
-                            }
-                        }
-                    }
+                    await NormalizeMetadataSearchResultImagesAsync(results);
 
                     // Map metadata results into Audible-shaped objects for public API consumers
                     var mapped = await Task.WhenAll((results ?? new List<MetadataSearchResult>()).Select(r => MapMetadataResultToAudibleAsync(r, region))).ConfigureAwait(false);
@@ -580,42 +595,7 @@ namespace Listenarr.Api.Controllers
                     var returnLimit = req.Pagination != null && req.Pagination.Limit > 0 ? Math.Clamp(req.Pagination.Limit, 1, 1000) : 50;
                     var results = await _searchService.IntelligentSearchAsync(query, candidateLimit, returnLimit, region: region, language: language, ct: HttpContext.RequestAborted);
 
-                    // Ensure images for results are served via our API when possible.
-                    // For results that provide an ASIN, prefer the local /api/v{version}/images/{asin}
-                    // endpoint by checking cached images or attempting to download and cache
-                    // external image URLs. This prevents leaking external Amazon/Audible
-                    // image URLs to the SPA and avoids mixed image sources.
-                    if (_imageCacheService != null && results != null)
-                    {
-                        foreach (var r in results)
-                        {
-                            try
-                            {
-                                if (r == null) continue;
-                                if (string.IsNullOrWhiteSpace(r.Asin)) continue;
-
-                                var cached = await _imageCacheService.GetCachedImagePathAsync(r.Asin);
-                                if (!string.IsNullOrWhiteSpace(cached))
-                                {
-                                    r.ImageUrl = BuildApiImagePath(r.Asin);
-                                    continue;
-                                }
-
-                                if (!string.IsNullOrWhiteSpace(r.ImageUrl) && (r.ImageUrl.StartsWith("http://") || r.ImageUrl.StartsWith("https://")))
-                                {
-                                    var downloaded = await _imageCacheService.DownloadAndCacheImageAsync(r.ImageUrl, r.Asin);
-                                    if (!string.IsNullOrWhiteSpace(downloaded))
-                                    {
-                                        r.ImageUrl = BuildApiImagePath(r.Asin);
-                                    }
-                                }
-                            }
-                            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
-                            {
-                                _logger.LogWarning(ex, "Failed to normalize image for result with ASIN {Asin}", r.Asin);
-                            }
-                        }
-                    }
+                    await NormalizeMetadataSearchResultImagesAsync(results);
 
                     // When a Series filter was provided, apply it to unified search results so only
                     // books actually belonging to the series are returned. This covers both the

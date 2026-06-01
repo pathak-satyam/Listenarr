@@ -247,6 +247,7 @@ docker-compose up --build
 - **Discord bot:** The dev/test Discord stub lives at `tools/discord-bot` — prefer updating the `README.md` there or the stub only when necessary; tests expect this stub to exist.
 - **Dev tools & scripts:** Misc scripts that are not API-specific may live under `tools/`, but major tooling is colocated with the API as shown above.
 - **Runtime notes:** Always run from the **repository root** (e.g., `npm run dev`) so the app uses the canonical DB at `listenarr.api/config/database/listenarr.db` and log paths under `listenarr.api/config/logs/`.
+- **Dev config path:** Local development configuration (env vars, secrets) now lives under **`.env/development`**. The `listenarr.api/config` folder should **not** be used for local configuration. If you have stale files there from a previous run, delete the folder.
 - **Environment:** Project targets **.NET 8 (net8.0)** and Node.js **20.x+**. Use those versions for local dev and CI to avoid build/test inconsistencies.
 - **Logging & debugging:** When adding diagnostics, prefer INFO-level logs for flow transitions and DEBUG for verbose data. Add clear early-return logs to background services (e.g., `DownloadMonitorService`) to make runtime behavior observable.
 
@@ -347,3 +348,96 @@ When showing download status in views:
 - Validate all user input, especially file paths (prevent path traversal)
 - Image cache cleanup service runs automatically to prevent disk fill
 - See `.github/AGENTS.md` for comprehensive secure coding guidelines
+
+### Backend Test Conventions
+
+Backend tests live under `tests/` and follow these conventions (see `tests/README.md` for full details):
+
+- **Naming:** Test class = `{TestedClassName}Tests`. Test method names describe the scenario.
+- **Location:** Mirror the source path — e.g., tests for `listenarr.application/Search/SearchService.cs` go in `tests/Features/Application/Search/SearchServiceTests.cs`.
+- **Base class:** Every test class inherits `BaseTests`.
+- **Traits:**
+  ```csharp
+  [Trait("Name", "SearchServiceTests")]
+  [Trait("Category", "SearchService")]
+  ```
+- **DI setup (`Init()`):** Call `Init()` to set up the DI container before adding test data. Override services with:
+  ```csharp
+  Init(services => services.WithSingleton(myMock.Object));
+  Init(services => services.Without<IServiceToRemove>());
+  ```
+  If no overrides are needed, `Init()` is called automatically in the constructor.
+- **Test data:** Use the builder pattern (classes under `tests/Builders/`) to create coherent, populated test entities. Prefer fluent `.With...()` methods followed by `.Build()` over multi-property inline object initializers. If a coherent domain/model fixture needs repeated setup and no builder exists, add a focused builder. Only add repository data *after* calling `Init()`.
+- **Test structure:** Follow Given / When / Then.
+- **Mock pattern:** API mocks inherit `BaseMock`. Useful helpers: `GetCallCount()`, `GetLastRequest()`, `GetLastContent()`.
+
+### Changelog Maintenance
+
+After any meaningful change (bug fix, new feature, improvement, notable refactor), update `CHANGELOG.md` at the repo root.
+
+**Where to add the entry:**
+- **Unpublished branch** (not yet merged — run `git log --oneline origin/canary..HEAD`; if commits are listed, branch is unpublished): add to a next-version section at the top, incrementing the patch number of the latest released version (e.g. `[0.2.61]` → `[0.2.62]`). Create the section if it doesn't exist. **Do not include a date** — the release pipeline adds it.
+- **Published branch** (empty output from above command): add to the topmost `## [x.y.z]` block.
+
+**Entry format:**
+```
+### Fixed          ← or Added / Changed / Removed / Security / Deprecated
+- **Short title:** One sentence explaining what changed and why it matters.
+```
+
+Skip purely mechanical changes (lock file bumps, typo fixes in comments, test fixture updates with no behavior change).
+
+### Code Formatting Rules (enforced by pre-commit hook)
+
+The pre-commit hook runs `node scripts/lint-staged.mjs` which checks both C# and frontend formatting. **Always ensure code passes these checks before committing.**
+
+#### C# (`dotnet-format`)
+- **No alignment/column-padding spaces.** Do not pad dictionary values, tuple elements, or assignment operators to line up columns. The formatter treats extra spaces as WHITESPACE errors and will reject them.
+  ```csharp
+  // ❌ WRONG — column-aligned padding
+  ["ca"] = ("www.audible.ca",     "www.amazon.ca"),
+  ["de"] = ("www.audible.de",     "www.amazon.de"),
+
+  // ✅ CORRECT — single space after comma
+  ["ca"] = ("www.audible.ca", "www.amazon.ca"),
+  ["de"] = ("www.audible.de", "www.amazon.de"),
+  ```
+- Run `dotnet format` from the repo root to auto-fix C# formatting before committing.
+
+#### Vue / TypeScript (`prettier`)
+- All `.vue`, `.ts`, and `.tsx` files must pass `prettier` formatting.
+- Run `cd fe && npm run format:prettier` to auto-fix before committing (the script is `format:prettier`, not `format`).
+- The hook runs Prettier in check mode; if it reports `Code style issues found`, run the fix command above.
+
+#### Quick fix workflow
+```bash
+# Fix all formatting in one pass:
+dotnet format
+cd fe && npm run format:prettier && cd ..
+# Then re-stage and commit
+```
+
+### Layering Rules (enforced by pre-commit hook)
+
+The pre-commit hook also enforces clean architecture boundaries:
+
+- `listenarr.api` **must not** reference `listenarr.infrastructure` (except `listenarr.api/Program.cs`)
+- `listenarr.application` **must not** reference `listenarr.infrastructure`
+- Data flows inward only: `infrastructure` → `application` → `api`
+
+Violations cause the commit to be rejected with a "Layering violation" error.
+
+### Other Enforced Rules (pre-commit)
+
+- **No `async void`** in production code (`listenarr.api`, `listenarr.application`, `listenarr.infrastructure`, `listenarr.domain`). Always use `async Task` instead — `async void` causes unobservable exceptions and is rejected by the hook.
+
+### Pre-Push Checks
+
+The pre-push hook runs additional checks on `git push`:
+
+1. **Version sync** — `node scripts/sync-fe-version-from-csproj.mjs` keeps the frontend `package.json` version in sync with the `.csproj`.
+2. **Full solution format** — `dotnet format listenarr.slnx --no-restore --verify-no-changes` ensures the entire solution (not just staged files) is formatted.
+3. **Frontend TypeScript check** — `cd fe && vue-tsc --build tsconfig.app.json` catches type errors across the whole frontend.
+4. **Frontend unit tests** — `cd fe && vitest run` — all Vitest tests must pass.
+
+If the push is rejected, fix the issue, amend or add a commit, then push again.
