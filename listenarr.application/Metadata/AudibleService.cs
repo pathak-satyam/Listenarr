@@ -19,6 +19,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using HtmlAgilityPack;
+using Listenarr.Application.Search;
 using Listenarr.Application.Security;
 using Microsoft.Extensions.Logging;
 
@@ -1863,19 +1864,7 @@ namespace Listenarr.Application.Metadata
 
         private static string GetAudibleBaseUrl(string region)
         {
-            return region?.Trim().ToLowerInvariant() switch
-            {
-                "au" => "https://www.audible.com.au",
-                "ca" => "https://www.audible.ca",
-                "de" => "https://www.audible.de",
-                "es" => "https://www.audible.es",
-                "fr" => "https://www.audible.fr",
-                "in" => "https://www.audible.in",
-                "it" => "https://www.audible.it",
-                "jp" => "https://www.audible.co.jp",
-                "uk" => "https://www.audible.co.uk",
-                _ => "https://www.audible.com"
-            };
+            return $"https://{MarketDomainResolver.GetAudibleDomain(region)}";
         }
 
         public virtual async Task<AudibleSearchResponse?> SearchByIsbnAsync(string isbn, int page = 1, int limit = 50, string region = "us", string? language = null)

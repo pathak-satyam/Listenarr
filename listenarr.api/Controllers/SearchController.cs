@@ -1361,7 +1361,7 @@ namespace Listenarr.Api.Controllers
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<List<object>>> SearchByTitle(
             [FromQuery] string query,
-            [FromQuery] string region = "us",
+            [FromQuery] string? region = null,
             [FromQuery] int limit = 10)
         {
             try
@@ -1370,6 +1370,9 @@ namespace Listenarr.Api.Controllers
                 {
                     return BadRequest("Query parameter is required");
                 }
+
+                var resolvedRegion = await ResolveSearchRegionAsync(region);
+                region = resolvedRegion;
 
                 _logger.LogInformation("Searching by title: {Query}", query);
 
@@ -1466,7 +1469,7 @@ namespace Listenarr.Api.Controllers
                         {
                             metadata = metadata,
                             source = searchResult.MetadataSource ?? searchResult.Source ?? "Amazon/Audible",
-                            sourceUrl = "https://www.amazon.com"
+                            sourceUrl = GetAudibleBaseUrl(region)
                         });
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
