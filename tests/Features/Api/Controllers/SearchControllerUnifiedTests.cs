@@ -21,6 +21,7 @@ using Listenarr.Application.Interfaces;
 using Listenarr.Application.Metadata;
 using Listenarr.Application.Search;
 using Listenarr.Domain.Models;
+using Listenarr.Domain.Models.Configurations;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -147,6 +148,95 @@ namespace Listenarr.Tests.Features.Api.Controllers
             Assert.Equal("BASIN", stubAudible4.LastTitle);
             Assert.Equal("de", stubAudible4.LastRegion);
             Assert.Equal("german", stubAudible4.LastLanguage);
+        }
+
+        [Fact]
+        public async Task SimpleSearch_WithoutRegion_Uses_ConfiguredDefaultRegion()
+        {
+            var mockSearch = new Mock<ISearchService>();
+            mockSearch.Setup(s => s.IntelligentSearchAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<double>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<System.Threading.CancellationToken>()))
+                      .ReturnsAsync(new List<MetadataSearchResult>());
+            var mockMeta = new Mock<IAudiobookMetadataService>();
+            var mockConfig = new Mock<IConfigurationService>();
+            mockConfig.Setup(c => c.GetApplicationSettingsAsync())
+                      .ReturnsAsync(new ApplicationSettings { DefaultSearchRegion = "de" });
+
+            var logger = new NullLogger<SearchController>();
+            var controller = new SearchController(mockSearch.Object, logger, new StubAudibleService(), mockMeta.Object, null, null, mockConfig.Object);
+            controller.ControllerContext = new ControllerContext { HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext() };
+
+            var reqJson = System.Text.Json.JsonSerializer.SerializeToElement(new { mode = "simple", query = "Dune" });
+
+            await controller.Search(reqJson);
+
+            mockSearch.Verify(s => s.IntelligentSearchAsync("Dune", 50, 50, "Relaxed", false, 0.7, "de", null, It.IsAny<System.Threading.CancellationToken>()), Times.Once);
+        }
+
+        [Fact]
+        public async Task AdvancedSearch_WithoutRegion_Uses_ConfiguredDefaultRegion()
+        {
+            var mockSearch = new Mock<ISearchService>();
+            mockSearch.Setup(s => s.IntelligentSearchAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<double>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<System.Threading.CancellationToken>()))
+                      .ReturnsAsync(new List<MetadataSearchResult>());
+            var mockMeta = new Mock<IAudiobookMetadataService>();
+            var mockConfig = new Mock<IConfigurationService>();
+            mockConfig.Setup(c => c.GetApplicationSettingsAsync())
+                      .ReturnsAsync(new ApplicationSettings { DefaultSearchRegion = "fr" });
+
+            var logger = new NullLogger<SearchController>();
+            var controller = new SearchController(mockSearch.Object, logger, new StubAudibleService(), mockMeta.Object, null, null, mockConfig.Object);
+            controller.ControllerContext = new ControllerContext { HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext() };
+
+            var reqJson = System.Text.Json.JsonSerializer.SerializeToElement(new { mode = "advanced", title = "Dune" });
+
+            await controller.Search(reqJson);
+
+            mockSearch.Verify(s => s.IntelligentSearchAsync(It.IsAny<string>(), 200, 50, "Relaxed", false, 0.7, "fr", null, It.IsAny<System.Threading.CancellationToken>()), Times.Once);
+        }
+
+        [Fact]
+        public async Task AdvancedSearch_AsinWithoutRegion_Uses_ConfiguredDefaultRegion()
+        {
+            var mockSearch = new Mock<ISearchService>();
+            var stubAudible = new StubAudibleService
+            {
+                BookResponseToReturn = new AudibleBookResponse { Asin = "BASIN", Title = "ASIN Title" }
+            };
+            var mockMeta = new Mock<IAudiobookMetadataService>();
+            var mockConfig = new Mock<IConfigurationService>();
+            mockConfig.Setup(c => c.GetApplicationSettingsAsync())
+                      .ReturnsAsync(new ApplicationSettings { DefaultSearchRegion = "de" });
+
+            var logger = new NullLogger<SearchController>();
+            var controller = new SearchController(mockSearch.Object, logger, stubAudible, mockMeta.Object, null, null, mockConfig.Object);
+            controller.ControllerContext = new ControllerContext { HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext() };
+
+            var reqJson = System.Text.Json.JsonSerializer.SerializeToElement(new { mode = "advanced", asin = "BASIN" });
+
+            await controller.Search(reqJson);
+
+            Assert.Equal("GetBookMetadataAsync", stubAudible.LastMethod);
+            Assert.Equal("de", stubAudible.LastRegion);
+        }
+
+        [Fact]
+        public async Task IntelligentSearch_WithoutRegion_Uses_ConfiguredDefaultRegion()
+        {
+            var mockSearch = new Mock<ISearchService>();
+            mockSearch.Setup(s => s.IntelligentSearchAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<double>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<System.Threading.CancellationToken>()))
+                      .ReturnsAsync(new List<MetadataSearchResult>());
+            var mockMeta = new Mock<IAudiobookMetadataService>();
+            var mockConfig = new Mock<IConfigurationService>();
+            mockConfig.Setup(c => c.GetApplicationSettingsAsync())
+                      .ReturnsAsync(new ApplicationSettings { DefaultSearchRegion = "jp" });
+
+            var logger = new NullLogger<SearchController>();
+            var controller = new SearchController(mockSearch.Object, logger, new StubAudibleService(), mockMeta.Object, null, null, mockConfig.Object);
+            controller.ControllerContext = new ControllerContext { HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext() };
+
+            await controller.IntelligentSearch("Dune");
+
+            mockSearch.Verify(s => s.IntelligentSearchAsync("Dune", 50, 50, "Relaxed", false, 0.7, "jp", null, It.IsAny<System.Threading.CancellationToken>()), Times.Once);
         }
 
         [Fact]

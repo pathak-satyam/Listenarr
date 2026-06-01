@@ -40,6 +40,7 @@ namespace Listenarr.Api.Controllers
         private readonly IAudiobookMetadataService _metadataService;
         private readonly IImageCacheService? _imageCacheService;
         private readonly MetadataConverters _metadataConverters;
+        private readonly IConfigurationService? _configurationService;
 
         public SearchController(
             ISearchService searchService,
@@ -47,7 +48,8 @@ namespace Listenarr.Api.Controllers
             AudibleService audibleService,
             IAudiobookMetadataService metadataService,
             IImageCacheService? imageCacheService = null,
-            MetadataConverters? metadataConverters = null)
+            MetadataConverters? metadataConverters = null,
+            IConfigurationService? configurationService = null)
         {
             _searchService = searchService;
             _logger = logger;
@@ -55,6 +57,7 @@ namespace Listenarr.Api.Controllers
             _metadataService = metadataService;
             _imageCacheService = imageCacheService;
             _metadataConverters = metadataConverters ?? new MetadataConverters(imageCacheService, Microsoft.Extensions.Logging.Abstractions.NullLogger<MetadataConverters>.Instance);
+            _configurationService = configurationService;
         }
 
         private string BuildApiImagePath(string identifier, string? sourceUrl = null)
@@ -112,6 +115,50 @@ namespace Listenarr.Api.Controllers
             }
 
             return string.IsNullOrWhiteSpace(url) || IsAudibleUrl(url) ? null : url;
+        }
+
+        private static bool JsonObjectHasProperty(JsonElement element, string propertyName)
+        {
+            if (element.ValueKind != JsonValueKind.Object)
+            {
+                return false;
+            }
+
+            foreach (var property in element.EnumerateObject())
+            {
+                if (string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private async Task<string> ResolveSearchRegionAsync(string? requestedRegion)
+        {
+            if (!string.IsNullOrWhiteSpace(requestedRegion))
+            {
+                return requestedRegion.Trim();
+            }
+
+            if (_configurationService != null)
+            {
+                try
+                {
+                    var settings = await _configurationService.GetApplicationSettingsAsync().ConfigureAwait(false);
+                    if (!string.IsNullOrWhiteSpace(settings?.DefaultSearchRegion))
+                    {
+                        return settings.DefaultSearchRegion.Trim();
+                    }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
+                    _logger.LogWarning(ex, "Failed to resolve configured default search region; falling back to us");
+                }
+            }
+
+            return "us";
         }
 
         private static string? NormalizeStructuredAdvancedField(string? value, string prefix)
@@ -232,7 +279,8 @@ namespace Listenarr.Api.Controllers
                 if (req.Mode == SearchMode.Simple)
                 {
                     var q = req.Query ?? string.Empty;
-                    var region = string.IsNullOrWhiteSpace(req.Region) ? "us" : req.Region;
+                    var requestedRegion = JsonObjectHasProperty(reqJson, "region") ? req.Region : null;
+                    var region = await ResolveSearchRegionAsync(requestedRegion).ConfigureAwait(false);
                     var language = string.IsNullOrWhiteSpace(req.Language) ? null : req.Language;
                     var results = await _searchService.IntelligentSearchAsync(q, region: region, language: language, ct: HttpContext.RequestAborted) ?? new List<MetadataSearchResult>();
 
@@ -323,7 +371,8 @@ namespace Listenarr.Api.Controllers
                     }
 
                     // Compose a query string from advanced parameters for unified handling
-                    var region = string.IsNullOrWhiteSpace(req.Region) ? "us" : req.Region;
+                    var requestedRegion = JsonObjectHasProperty(reqJson, "region") ? req.Region : null;
+                    var region = await ResolveSearchRegionAsync(requestedRegion).ConfigureAwait(false);
                     var language = string.IsNullOrWhiteSpace(req.Language) ? null : req.Language;
 
                     // If no advanced search parameters were provided, signal BadRequest to caller
@@ -1086,7 +1135,8 @@ namespace Listenarr.Api.Controllers
                 }
 
                 _logger.LogInformation("IntelligentSearch called for query: {Query}", LogRedaction.SanitizeText(query));
-                var region = Request.Query.TryGetValue("region", out var regionValue) ? regionValue.ToString() ?? "us" : "us";
+                var requestedRegion = Request.Query.TryGetValue("region", out var regionValue) ? regionValue.ToString() : null;
+                var region = await ResolveSearchRegionAsync(requestedRegion).ConfigureAwait(false);
                 var language = Request.Query.TryGetValue("language", out var languageValue) ? languageValue.ToString() : null;
                 var results = await _searchService.IntelligentSearchAsync(query, candidateLimit, returnLimit, containmentMode, requireAuthorAndPublisher, fuzzyThreshold, region, language, HttpContext.RequestAborted);
                 // Normalize images for metadata results so the SPA receives local /api/v{version}/images/{asin} when possible
