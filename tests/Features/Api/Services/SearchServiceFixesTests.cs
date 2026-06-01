@@ -159,7 +159,8 @@ namespace Listenarr.Tests.Features.Api.Services
         public async Task SearchByAsinAsync_Uses_Requested_Region_For_Audible_Source_Links()
         {
             var configuration = Mock.Of<IConfigurationService>();
-            var audible = new Mock<AudibleService>(new HttpClient(), NullLogger<AudibleService>.Instance);
+            using var httpClient = new HttpClient();
+            var audible = new Mock<AudibleService>(httpClient, NullLogger<AudibleService>.Instance);
             audible
                 .Setup(s => s.GetBookMetadataAsync("B0TEST1234", "de", true, "german"))
                 .ReturnsAsync(new AudibleBookResponse

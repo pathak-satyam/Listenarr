@@ -231,6 +231,7 @@ namespace Listenarr.Tests.Features.Api.Services
         private sealed class CapturingHandler : HttpMessageHandler
         {
             private readonly Func<HttpRequestMessage, string> _responseFactory;
+            private readonly List<HttpResponseMessage> _responses = new();
 
             public CapturingHandler(Func<HttpRequestMessage, string> responseFactory)
             {
@@ -243,10 +244,27 @@ namespace Listenarr.Tests.Features.Api.Services
             {
                 Requests.Add(CapturedAudibleRequest.From(request));
 
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                var response = new HttpResponseMessage(HttpStatusCode.OK)
                 {
                     Content = new StringContent(_responseFactory(request), Encoding.UTF8, "application/json")
-                });
+                };
+                _responses.Add(response);
+                return Task.FromResult(response);
+            }
+
+            protected override void Dispose(bool disposing)
+            {
+                if (disposing)
+                {
+                    foreach (var response in _responses)
+                    {
+                        response.Dispose();
+                    }
+
+                    _responses.Clear();
+                }
+
+                base.Dispose(disposing);
             }
         }
 

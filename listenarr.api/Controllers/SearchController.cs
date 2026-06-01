@@ -67,30 +67,12 @@ namespace Listenarr.Api.Controllers
         {
             return string.IsNullOrWhiteSpace(asin)
                 ? null
-                : $"https://{GetAudibleDomain(region)}/pd/{Uri.EscapeDataString(asin)}";
+                : MarketDomainResolver.BuildAudibleProductUrl(asin, region);
         }
 
         private static string GetAudibleBaseUrl(string? region)
         {
-            return $"https://{GetAudibleDomain(region)}";
-        }
-
-        private static string GetAudibleDomain(string? region)
-        {
-            return region?.Trim().ToLowerInvariant() switch
-            {
-                "au" => "www.audible.com.au",
-                "br" => "www.audible.com.br",
-                "ca" => "www.audible.ca",
-                "de" => "www.audible.de",
-                "es" => "www.audible.es",
-                "fr" => "www.audible.fr",
-                "in" => "www.audible.in",
-                "it" => "www.audible.it",
-                "jp" => "www.audible.co.jp",
-                "uk" or "gb" => "www.audible.co.uk",
-                _ => "www.audible.com"
-            };
+            return $"https://{MarketDomainResolver.GetAudibleDomain(region)}";
         }
 
         private static bool IsAudibleUrl(string? url)
@@ -114,7 +96,32 @@ namespace Listenarr.Api.Controllers
                 return BuildAudibleProductUrl(asin, region);
             }
 
-            return string.IsNullOrWhiteSpace(url) || IsAudibleUrl(url) ? null : url;
+            if (string.IsNullOrWhiteSpace(url))
+            {
+                return null;
+            }
+
+            if (!IsAudibleUrl(url))
+            {
+                return url;
+            }
+
+            return RegionalizeAudibleUrl(url, region);
+        }
+
+        private static string RegionalizeAudibleUrl(string url, string? region)
+        {
+            if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+            {
+                return url;
+            }
+
+            var builder = new UriBuilder(uri)
+            {
+                Host = MarketDomainResolver.GetAudibleDomain(region)
+            };
+
+            return builder.Uri.ToString();
         }
 
         private static bool JsonObjectHasProperty(JsonElement element, string propertyName)
@@ -124,15 +131,9 @@ namespace Listenarr.Api.Controllers
                 return false;
             }
 
-            foreach (var property in element.EnumerateObject())
-            {
-                if (string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase))
-                {
-                    return true;
-                }
-            }
-
-            return false;
+            return element
+                .EnumerateObject()
+                .Any(property => string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase));
         }
 
         private async Task<string> ResolveSearchRegionAsync(string? requestedRegion)
@@ -660,7 +661,7 @@ namespace Listenarr.Api.Controllers
                 if (r == null) return;
                 if (string.IsNullOrWhiteSpace(r.ProductUrl) && !string.IsNullOrWhiteSpace(r.Asin))
                 {
-                    r.ProductUrl = $"https://www.amazon.com/dp/{Uri.EscapeDataString(r.Asin)}";
+                    r.ProductUrl = MarketDomainResolver.BuildAmazonProductUrl(r.Asin, region);
                 }
 
                 var sourceText = $"{r.Source} {r.MetadataSource}";
@@ -865,7 +866,7 @@ namespace Listenarr.Api.Controllers
                     releaseDate = aud.ReleaseDate ?? aud.PublishDate ?? md?.PublishedDate,
                     @explicit = aud.Explicit ?? false,
                     hasPdf = false,
-                    link = NormalizeAudibleProductUrl(md?.ProductUrl, aud.Asin ?? md?.Asin, aud.Region ?? region),
+                    link = NormalizeAudibleProductUrl(md!.ProductUrl, aud.Asin ?? md!.Asin, aud.Region ?? region),
                     sku = aud.Sku,
                     skuGroup = (string?)null,
                     isListenable = !string.IsNullOrWhiteSpace(aud.Asin ?? md?.Asin),

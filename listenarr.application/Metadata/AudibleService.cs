@@ -1128,7 +1128,7 @@ namespace Listenarr.Application.Metadata
                 }
 
                 using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
-                var response = await _httpClient.SendAsync(request, cts.Token);
+                using var response = await _httpClient.SendAsync(request, cts.Token);
                 if (!response.IsSuccessStatusCode)
                 {
                     _logger.LogWarning("Audible API returned status code {StatusCode} for URL {Url}", response.StatusCode, url);
