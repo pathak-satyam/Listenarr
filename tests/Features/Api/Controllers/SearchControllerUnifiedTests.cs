@@ -138,13 +138,15 @@ namespace Listenarr.Tests.Features.Api.Controllers
             var controller = new SearchController(mockSearch.Object, logger, stubAudible4, mockMeta.Object, null);
             controller.ControllerContext = new ControllerContext { HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext() };
 
-            var req = new SearchRequest { Mode = SearchMode.Advanced, Asin = "BASIN" };
+            var req = new SearchRequest { Mode = SearchMode.Advanced, Asin = "BASIN", Region = "de", Language = "german" };
             var reqJson = System.Text.Json.JsonSerializer.SerializeToElement(req);
             var res = await controller.Search(reqJson);
 
             Assert.NotNull(res);
             Assert.Equal("GetBookMetadataAsync", stubAudible4.LastMethod);
             Assert.Equal("BASIN", stubAudible4.LastTitle);
+            Assert.Equal("de", stubAudible4.LastRegion);
+            Assert.Equal("german", stubAudible4.LastLanguage);
         }
 
         [Fact]
@@ -246,7 +248,13 @@ namespace Listenarr.Tests.Features.Api.Controllers
             var mockSearch = new Mock<ISearchService>();
             var mockMeta = new Mock<IAudiobookMetadataService>();
 
-            var md = new MetadataSearchResult { Asin = "BAUD1", Title = "Title", IsEnriched = true };
+            var md = new MetadataSearchResult
+            {
+                Asin = "BAUD1",
+                Title = "Title",
+                IsEnriched = true,
+                ProductUrl = "https://www.amazon.com/dp/BAUD1"
+            };
             mockSearch.Setup(s => s.IntelligentSearchAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<double>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<System.Threading.CancellationToken>()))
                       .ReturnsAsync(new List<MetadataSearchResult> { md });
 
@@ -258,6 +266,7 @@ namespace Listenarr.Tests.Features.Api.Controllers
                 Narrators = new List<AudibleNarrator> { new AudibleNarrator { Name = "Narrator Name" } },
                 Genres = new List<AudibleGenre> { new AudibleGenre { Asin = "G1", Name = "Fiction", Type = "Fiction" } },
                 Series = new List<AudibleSeries> { new AudibleSeries { Asin = "S1", Name = "Series Name", Position = "1" } },
+                Region = "de",
                 ImageUrl = "http://example.com/cover.jpg",
                 LengthMinutes = 600,
                 ReleaseDate = "2021-05-04T00:00:00.000Z",
@@ -270,7 +279,7 @@ namespace Listenarr.Tests.Features.Api.Controllers
             var controller = new SearchController(mockSearch.Object, logger, new StubAudibleService(), mockMeta.Object, null);
             controller.ControllerContext = new ControllerContext { HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext() };
 
-            var req = new SearchRequest { Mode = SearchMode.Simple, Query = "q" };
+            var req = new SearchRequest { Mode = SearchMode.Simple, Query = "q", Region = "de" };
             var reqJson = System.Text.Json.JsonSerializer.SerializeToElement(req);
             var res = await controller.Search(reqJson);
 
@@ -297,6 +306,7 @@ namespace Listenarr.Tests.Features.Api.Controllers
             var series = sProp.EnumerateArray();
             var firstSeries = series.First();
             Assert.Equal("S1", firstSeries.GetProperty("asin").GetString());
+            Assert.Equal("https://www.audible.de/pd/BAUD1", first.GetProperty("link").GetString());
         }
 
         [Fact]
@@ -416,6 +426,8 @@ namespace Listenarr.Tests.Features.Api.Controllers
         public string? LastMethod { get; set; }
         public string? LastTitle { get; set; }
         public string? LastAuthor { get; set; }
+        public string? LastRegion { get; set; }
+        public string? LastLanguage { get; set; }
         public int LastPage { get; set; }
         public int LastLimit { get; set; }
         public AudibleSearchResponse? ResponseToReturn { get; set; }
@@ -478,8 +490,9 @@ namespace Listenarr.Tests.Features.Api.Controllers
         {
             LastMethod = "GetBookMetadataAsync";
             LastTitle = asin;
+            LastRegion = region;
+            LastLanguage = language;
             return Task.FromResult(BookResponseToReturn);
         }
     }
 }
-

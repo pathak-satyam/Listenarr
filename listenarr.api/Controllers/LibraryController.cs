@@ -368,7 +368,7 @@ namespace Listenarr.Api.Controllers
                 metadata.Series,
                 AudibleBookMetadata.ToStringOrFirst(metadata.SeriesNumber));
 
-            SyncImportedIdentifiersFromLegacyFields(audiobook);
+            SyncImportedIdentifiersFromLegacyFields(audiobook, metadata.Region);
 
             _logger.LogInformation("Created Audiobook entity: Title={Title}, Asin={Asin}, PublishYear={PublishYear}",
                 LogRedaction.SanitizeText(audiobook.Title), LogRedaction.SanitizeText(audiobook.Asin), LogRedaction.SanitizeText(audiobook.PublishYear));
@@ -1104,7 +1104,7 @@ namespace Listenarr.Api.Controllers
 
             if (legacyIdentifierFieldsTouched)
             {
-                SyncImportedIdentifiersFromLegacyFields(audiobook);
+                SyncImportedIdentifiersFromLegacyFields(audiobook, convertedMetadata.Region ?? resolvedRegion);
             }
 
             await _repo.UpdateAsync(audiobook);
@@ -3726,10 +3726,14 @@ namespace Listenarr.Api.Controllers
                 .ToList();
         }
 
-        private static List<AudiobookExternalIdentifier> BuildLegacyBackfillIdentifiers(Audiobook audiobook, AudiobookExternalIdentifierSource source)
+        private static List<AudiobookExternalIdentifier> BuildLegacyBackfillIdentifiers(
+            Audiobook audiobook,
+            AudiobookExternalIdentifierSource source,
+            string? asinRegion = null)
         {
             var now = DateTime.UtcNow;
             var result = new List<AudiobookExternalIdentifier>();
+            var normalizedAsinRegion = AudiobookIdentifierNormalizer.NormalizeRegion(asinRegion);
 
             if (!string.IsNullOrWhiteSpace(audiobook.Asin) &&
                 AudiobookIdentifierNormalizer.TryNormalize(AudiobookExternalIdentifierType.Asin, audiobook.Asin, out var normalizedAsin, out _))
@@ -3739,7 +3743,7 @@ namespace Listenarr.Api.Controllers
                     Type = AudiobookExternalIdentifierType.Asin,
                     ValueRaw = AudiobookIdentifierNormalizer.NormalizeRawValueForStorage(audiobook.Asin),
                     ValueNormalized = normalizedAsin,
-                    Region = null,
+                    Region = normalizedAsinRegion,
                     IsPrimary = true,
                     Source = source,
                     CreatedAt = now,
@@ -3881,7 +3885,7 @@ namespace Listenarr.Api.Controllers
             audiobook.OpenLibraryId = primaryOlid?.ValueNormalized;
         }
 
-        private static void SyncImportedIdentifiersFromLegacyFields(Audiobook audiobook)
+        private static void SyncImportedIdentifiersFromLegacyFields(Audiobook audiobook, string? asinRegion = null)
         {
             audiobook.ExternalIdentifiers ??= new List<AudiobookExternalIdentifier>();
 
@@ -3896,7 +3900,7 @@ namespace Listenarr.Api.Controllers
                 StringComparer.OrdinalIgnoreCase);
             var seenImportedFullKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-            var imported = BuildLegacyBackfillIdentifiers(audiobook, AudiobookExternalIdentifierSource.Imported);
+            var imported = BuildLegacyBackfillIdentifiers(audiobook, AudiobookExternalIdentifierSource.Imported, asinRegion);
             foreach (var item in imported.Where(item =>
                          !string.IsNullOrWhiteSpace(item.ValueNormalized) &&
                          !existingTypeValueKeys.Contains(IdentifierTypeValueKey(item)) &&

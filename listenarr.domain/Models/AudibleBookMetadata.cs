@@ -24,6 +24,7 @@ namespace Listenarr.Domain.Models
         // Use single canonical ASIN property to avoid JSON property name collisions
         public string? Asin { get; set; }
         public string? Source { get; set; } // "Audible" or "Amazon" to track metadata source
+        public string? Region { get; set; }
         public string? Title { get; set; }
         public string? Subtitle { get; set; }
         public List<string>? Authors { get; set; }
@@ -101,4 +102,3 @@ namespace Listenarr.Domain.Models
         }
     }
 }
-

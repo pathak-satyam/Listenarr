@@ -60,6 +60,60 @@ namespace Listenarr.Api.Controllers
         private string BuildApiImagePath(string identifier, string? sourceUrl = null)
             => ApiVersionUtils.BuildImagePath(identifier, HttpContext, sourceUrl: sourceUrl);
 
+        private static string? BuildAudibleProductUrl(string? asin, string? region)
+        {
+            return string.IsNullOrWhiteSpace(asin)
+                ? null
+                : $"https://{GetAudibleDomain(region)}/pd/{Uri.EscapeDataString(asin)}";
+        }
+
+        private static string GetAudibleBaseUrl(string? region)
+        {
+            return $"https://{GetAudibleDomain(region)}";
+        }
+
+        private static string GetAudibleDomain(string? region)
+        {
+            return region?.Trim().ToLowerInvariant() switch
+            {
+                "au" => "www.audible.com.au",
+                "br" => "www.audible.com.br",
+                "ca" => "www.audible.ca",
+                "de" => "www.audible.de",
+                "es" => "www.audible.es",
+                "fr" => "www.audible.fr",
+                "in" => "www.audible.in",
+                "it" => "www.audible.it",
+                "jp" => "www.audible.co.jp",
+                "uk" or "gb" => "www.audible.co.uk",
+                _ => "www.audible.com"
+            };
+        }
+
+        private static bool IsAudibleUrl(string? url)
+        {
+            if (string.IsNullOrWhiteSpace(url)) return false;
+            return Uri.TryCreate(url, UriKind.Absolute, out var uri) && IsAudibleHost(uri.Host);
+        }
+
+        private static bool IsAudibleHost(string host)
+        {
+            var normalized = host.Trim().ToLowerInvariant();
+            return normalized.StartsWith("audible.", StringComparison.Ordinal) ||
+                   normalized.StartsWith("www.audible.", StringComparison.Ordinal) ||
+                   normalized.StartsWith("api.audible.", StringComparison.Ordinal);
+        }
+
+        private static string? NormalizeAudibleProductUrl(string? url, string? asin, string? region)
+        {
+            if (!string.IsNullOrWhiteSpace(asin))
+            {
+                return BuildAudibleProductUrl(asin, region);
+            }
+
+            return string.IsNullOrWhiteSpace(url) || IsAudibleUrl(url) ? null : url;
+        }
+
         private static string? NormalizeStructuredAdvancedField(string? value, string prefix)
         {
             if (string.IsNullOrWhiteSpace(value))
@@ -301,7 +355,7 @@ namespace Listenarr.Api.Controllers
                     {
                         try
                         {
-                            var audible = await _audibleService.GetBookMetadataAsync(req.Asin, region, true);
+                            var audible = await _audibleService.GetBookMetadataAsync(req.Asin, region, true, language);
                             if (audible != null)
                             {
                                 // Convert audible response to internal metadata then to SearchResult
@@ -557,7 +611,15 @@ namespace Listenarr.Api.Controllers
                 if (r == null) return;
                 if (string.IsNullOrWhiteSpace(r.ProductUrl) && !string.IsNullOrWhiteSpace(r.Asin))
                 {
-                    r.ProductUrl = $"https://www.amazon.com/dp/{r.Asin}";
+                    r.ProductUrl = $"https://www.amazon.com/dp/{Uri.EscapeDataString(r.Asin)}";
+                }
+
+                var sourceText = $"{r.Source} {r.MetadataSource}";
+                if (!string.IsNullOrWhiteSpace(r.Asin) &&
+                    sourceText.Contains("Audible", StringComparison.OrdinalIgnoreCase))
+                {
+                    r.ProductUrl = NormalizeAudibleProductUrl(r.ProductUrl, r.Asin, region);
+                    r.SourceLink = NormalizeAudibleProductUrl(r.SourceLink, r.Asin, region);
                 }
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
@@ -639,7 +701,7 @@ namespace Listenarr.Api.Controllers
                 releaseDate = book.ReleaseDate,
                 @explicit = false,
                 hasPdf = false,
-                link = !string.IsNullOrWhiteSpace(book.Asin) ? $"https://www.audible.com/pd/{book.Asin}" : (string?)null,
+                link = BuildAudibleProductUrl(book.Asin, region),
                 sku = book.Sku,
                 isListenable = !string.IsNullOrWhiteSpace(book.Asin),
                 isAvailable = true,
@@ -754,9 +816,7 @@ namespace Listenarr.Api.Controllers
                     releaseDate = aud.ReleaseDate ?? aud.PublishDate ?? md?.PublishedDate,
                     @explicit = aud.Explicit ?? false,
                     hasPdf = false,
-                    link = !string.IsNullOrWhiteSpace(md?.ProductUrl)
-                        ? md.ProductUrl
-                        : !string.IsNullOrWhiteSpace(aud.Asin) ? $"https://www.audible.com/pd/{aud.Asin}" : null,
+                    link = NormalizeAudibleProductUrl(md?.ProductUrl, aud.Asin ?? md?.Asin, aud.Region ?? region),
                     sku = aud.Sku,
                     skuGroup = (string?)null,
                     isListenable = !string.IsNullOrWhiteSpace(aud.Asin ?? md?.Asin),
@@ -803,7 +863,7 @@ namespace Listenarr.Api.Controllers
                 releaseDate = md?.PublishedDate,
                 @explicit = false,
                 hasPdf = false,
-                link = md?.ProductUrl,
+                link = NormalizeAudibleProductUrl(md?.ProductUrl, md?.Asin, region),
                 sku = (string?)null,
                 skuGroup = (string?)null,
                 isListenable = !string.IsNullOrWhiteSpace(md?.Asin),
@@ -1287,7 +1347,7 @@ namespace Listenarr.Api.Controllers
                             {
                                 metadata = audible,
                                 source = "Audible",
-                                sourceUrl = "https://www.audible.com"
+                                sourceUrl = GetAudibleBaseUrl(region)
                             };
                             return Ok(new List<object> { metadataObj });
                         }
@@ -1448,4 +1508,3 @@ namespace Listenarr.Api.Controllers
         }
     }
 }
-

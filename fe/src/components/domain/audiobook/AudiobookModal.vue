@@ -193,6 +193,7 @@ import { stripHtmlAndNormalize } from '@/utils/textUtils'
 import { useProtectedImages } from '@/composables/useProtectedImages'
 import { Modal, ModalBody, ModalHeader } from '@/components/feedback'
 import { formatDate, formatRuntime, capitalizeFirst } from '@/utils/searchResultFormatting'
+import { buildAudibleProductUrl } from '@/utils/marketDomains'
 
 interface Props {
   visible: boolean
@@ -231,12 +232,12 @@ const audibleSourceUrl = computed(() => {
   const source = props.book?.source?.toLowerCase()
   const asin = props.book?.asin
   if (!source?.includes('audible') || !asin) return null
-  return `https://www.audible.com/pd/${encodeURIComponent(asin)}`
+  return buildAudibleProductUrl(asin, props.book?.region)
 })
 
 const audibleProductUrl = computed(() => {
   const asin = props.book?.asin
-  return asin ? `https://www.audible.com/pd/${asin}` : '#'
+  return asin ? buildAudibleProductUrl(asin, props.book?.region) : '#'
 })
 
 const openLibraryUrl = computed(() => {

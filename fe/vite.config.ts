@@ -14,21 +14,29 @@ export default defineConfig(({ mode }) => ({
     vue(),
     // Generate a static treemap report after build
     // cast to any to satisfy TypeScript when mixing rollup plugin types with Vite
-  // cast plugin to any to avoid Vite/TS signature issues
-  // Visualizer returns a Rollup plugin. Cast via unknown -> Plugin to avoid explicit `any`.
-  (visualizer({ filename: 'dist/stats.html', title: 'Listenarr bundle analysis', open: false }) as unknown as PluginOption),
+    // cast plugin to any to avoid Vite/TS signature issues
+    // Visualizer returns a Rollup plugin. Cast via unknown -> Plugin to avoid explicit `any`.
+    visualizer({
+      filename: 'dist/stats.html',
+      title: 'Listenarr bundle analysis',
+      open: false,
+    }) as unknown as PluginOption,
   ],
   build: {
     // Generate sourcemaps for bundle analysis tools (source-map-explorer)
     sourcemap: true,
   },
-  esbuild: {
-    // Remove console.log and debugger statements from production builds
-    drop: mode === 'production' ? ['console', 'debugger'] : [],
-  },
+  ...(mode === 'production'
+    ? {
+        esbuild: {
+          // Remove console.log and debugger statements from production builds
+          drop: ['console', 'debugger'],
+        },
+      }
+    : {}),
   resolve: {
     alias: {
-      '@': fileURLToPath(new URL('./src', import.meta.url))
+      '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
   },
   server: {
@@ -43,8 +51,7 @@ export default defineConfig(({ mode }) => ({
         // Use the object form which is more explicit and reliable across
         // environments. Also rewrite path to '/' to ensure cookie applies.
         cookieDomainRewrite: { '*': '' },
-        cookiePathRewrite: '/'
-        ,
+        cookiePathRewrite: '/',
         // Ensure the original Cookie header from the browser is forwarded to
         // the backend. Some proxy environments do not forward cookies by
         // default; adding this configure hook forces the header through.
@@ -61,20 +68,23 @@ export default defineConfig(({ mode }) => ({
                       httpRes.end(JSON.stringify({ message: 'API is starting, please retry.' }))
                     }
                   }
-                } catch { /* ignore */ }
+                } catch {
+                  /* ignore */
+                }
                 return
               }
             })
             proxy.on('proxyReq', (proxyReq, req) => {
               try {
-                const origCookie = req && req.headers && (req.headers['cookie'] || req.headers.cookie)
+                const origCookie =
+                  req && req.headers && (req.headers['cookie'] || req.headers.cookie)
                 if (origCookie) {
                   proxyReq.setHeader('cookie', origCookie)
                 }
               } catch {}
             })
           }
-        }
+        },
       },
       '/hubs': {
         target: 'http://localhost:4545',
@@ -89,8 +99,8 @@ export default defineConfig(({ mode }) => ({
               // ECONNREFUSED during startup — ignore silently
             })
           }
-        }
-      }
-    }
-  }
+        },
+      },
+    },
+  },
 }))

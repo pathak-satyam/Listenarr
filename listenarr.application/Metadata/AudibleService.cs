@@ -869,7 +869,7 @@ namespace Listenarr.Application.Metadata
             if (!string.IsNullOrWhiteSpace(publisher)) parameters["publisher"] = publisher;
 
             var url = $"{BuildAudibleApiBaseUrl(safeRegion)}/1.0/catalog/products/?{BuildQueryString(parameters)}";
-            using var doc = await GetAudibleJsonDocumentAsync(url, safeRegion, includeLocaleHeaders: false, timeoutSeconds: 10);
+            using var doc = await GetAudibleJsonDocumentAsync(url, safeRegion, includeLocaleHeaders: true, timeoutSeconds: 10);
             if (doc == null)
             {
                 return new SearchProductsDirectResponse();
@@ -922,7 +922,7 @@ namespace Listenarr.Application.Metadata
                     ["image_sizes"] = "500,1000,2400,3200"
                 })}";
 
-            return await GetAudibleJsonDocumentAsync(url, safeRegion, includeLocaleHeaders: false, timeoutSeconds: 10);
+            return await GetAudibleJsonDocumentAsync(url, safeRegion, includeLocaleHeaders: true, timeoutSeconds: 10);
         }
 
         private async Task<List<AudibleBookResponse>> GetBooksMetadataByAsinsAsync(IEnumerable<string> asins, string region)
@@ -948,7 +948,7 @@ namespace Listenarr.Application.Metadata
                             ["image_sizes"] = "500,1000,2400,3200"
                         })}",
                         normalizedRegion,
-                        includeLocaleHeaders: false,
+                        includeLocaleHeaders: true,
                         timeoutSeconds: 15);
 
                 if (doc == null)
@@ -1937,7 +1937,7 @@ namespace Listenarr.Application.Metadata
                     Publisher = meta.Publisher,
                     Narrators = meta.Narrators,
                     ReleaseDate = meta.ReleaseDate,
-                    Link = $"https://www.amazon.com/dp/{meta.Asin}"
+                    Link = string.IsNullOrWhiteSpace(meta.Asin) ? null : $"{GetAudibleBaseUrl(meta.Region ?? region)}/pd/{meta.Asin}"
                 };
 
                 return new AudibleSearchResponse { Results = new List<AudibleSearchResult> { single }, TotalResults = 1 };

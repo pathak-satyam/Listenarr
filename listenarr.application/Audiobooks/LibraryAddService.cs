@@ -130,7 +130,7 @@ namespace Listenarr.Application.Audiobooks
             audiobook.ImageUrl = imageUrl;
             audiobook.Monitored = request.Monitored;
 
-            SyncImportedIdentifiersFromLegacyFields(audiobook);
+            SyncImportedIdentifiersFromLegacyFields(audiobook, metadata.Region);
 
             if (request.QualityProfileId.HasValue)
             {
@@ -389,7 +389,7 @@ namespace Listenarr.Application.Audiobooks
             return BitConverter.ToString(hash).Replace("-", "").Substring(0, 16).ToLowerInvariant();
         }
 
-        private static void SyncImportedIdentifiersFromLegacyFields(Audiobook audiobook)
+        private static void SyncImportedIdentifiersFromLegacyFields(Audiobook audiobook, string? asinRegion = null)
         {
             audiobook.ExternalIdentifiers ??= new List<AudiobookExternalIdentifier>();
 
@@ -404,7 +404,7 @@ namespace Listenarr.Application.Audiobooks
                 StringComparer.OrdinalIgnoreCase);
             var seenImportedFullKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-            var imported = BuildLegacyBackfillIdentifiers(audiobook, AudiobookExternalIdentifierSource.Imported);
+            var imported = BuildLegacyBackfillIdentifiers(audiobook, AudiobookExternalIdentifierSource.Imported, asinRegion);
             foreach (var item in imported.Where(item =>
                          !string.IsNullOrWhiteSpace(item.ValueNormalized) &&
                          !existingTypeValueKeys.Contains(IdentifierTypeValueKey(item)) &&
@@ -416,10 +416,12 @@ namespace Listenarr.Application.Audiobooks
 
         private static List<AudiobookExternalIdentifier> BuildLegacyBackfillIdentifiers(
             Audiobook audiobook,
-            AudiobookExternalIdentifierSource source)
+            AudiobookExternalIdentifierSource source,
+            string? asinRegion = null)
         {
             var now = DateTime.UtcNow;
             var result = new List<AudiobookExternalIdentifier>();
+            var normalizedAsinRegion = AudiobookIdentifierNormalizer.NormalizeRegion(asinRegion);
 
             if (!string.IsNullOrWhiteSpace(audiobook.Asin) &&
                 AudiobookIdentifierNormalizer.TryNormalize(
@@ -433,7 +435,7 @@ namespace Listenarr.Application.Audiobooks
                     Type = AudiobookExternalIdentifierType.Asin,
                     ValueRaw = AudiobookIdentifierNormalizer.NormalizeRawValueForStorage(audiobook.Asin),
                     ValueNormalized = normalizedAsin,
-                    Region = null,
+                    Region = normalizedAsinRegion,
                     IsPrimary = true,
                     Source = source,
                     CreatedAt = now,
