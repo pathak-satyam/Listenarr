@@ -83,6 +83,27 @@ namespace Listenarr.Application.Search
             _cache = cache;
         }
 
+        private static AudibleBookResponse ToAudibleBookResponse(AudibleSearchResult book, string region)
+        {
+            return new AudibleBookResponse
+            {
+                Asin = book.Asin,
+                Title = book.Title,
+                Subtitle = book.Subtitle,
+                Authors = book.Authors,
+                ImageUrl = book.ImageUrl,
+                Language = book.Language,
+                BookFormat = book.BookFormat,
+                Genres = book.Genres,
+                Series = book.Series,
+                Publisher = book.Publisher,
+                Narrators = book.Narrators,
+                ReleaseDate = book.ReleaseDate,
+                Isbn = book.Isbn,
+                Region = region
+            };
+        }
+
         public async Task<List<SearchResult>> SearchAsync(string query, string? category = null, List<string>? apiIds = null, SearchSortBy sortBy = SearchSortBy.Seeders, SearchSortDirection sortDirection = SearchSortDirection.Descending, bool isAutomaticSearch = false)
         {
             var results = new List<SearchResult>();
@@ -535,22 +556,7 @@ namespace Listenarr.Application.Search
                             if (!string.IsNullOrWhiteSpace(language)) amFiltered = amFiltered.Where(b => !string.IsNullOrWhiteSpace(b.Language) && string.Equals(b.Language, language, StringComparison.OrdinalIgnoreCase));
                             foreach (var book in amFiltered.Where(book => !string.IsNullOrWhiteSpace(book.Asin)))
                             {
-                                var bookResp = new AudibleBookResponse
-                                {
-                                    Asin = book.Asin,
-                                    Title = book.Title,
-                                    Subtitle = book.Subtitle,
-                                    Authors = book.Authors,
-                                    ImageUrl = book.ImageUrl,
-                                    Language = book.Language,
-                                    BookFormat = book.BookFormat,
-                                    Genres = book.Genres,
-                                    Series = book.Series,
-                                    Publisher = book.Publisher,
-                                    Narrators = book.Narrators,
-                                    ReleaseDate = book.ReleaseDate,
-                                    Isbn = book.Isbn
-                                };
+                                var bookResp = ToAudibleBookResponse(book, region);
                                 var meta = _metadataConverters.ConvertAudibleToMetadata(bookResp, book.Asin!, "Audible");
                                 var sr = await _metadataConverters.ConvertMetadataToSearchResultAsync(meta, book.Asin!);
                                 sr.IsEnriched = true;
@@ -616,21 +622,7 @@ namespace Listenarr.Application.Search
                             if (!string.IsNullOrWhiteSpace(language)) authorFiltered = authorFiltered.Where(b => !string.IsNullOrWhiteSpace(b.Language) && string.Equals(b.Language, language, StringComparison.OrdinalIgnoreCase));
                             foreach (var book in authorFiltered.Where(book => !string.IsNullOrWhiteSpace(book.Asin)))
                             {
-                                var bookResp = new AudibleBookResponse
-                                {
-                                    Asin = book.Asin,
-                                    Title = book.Title,
-                                    Subtitle = book.Subtitle,
-                                    Authors = book.Authors,
-                                    ImageUrl = book.ImageUrl,
-                                    Language = book.Language,
-                                    BookFormat = book.BookFormat,
-                                    Genres = book.Genres,
-                                    Series = book.Series,
-                                    Publisher = book.Publisher,
-                                    Narrators = book.Narrators,
-                                    ReleaseDate = book.ReleaseDate
-                                };
+                                var bookResp = ToAudibleBookResponse(book, region);
                                 var meta = _metadataConverters.ConvertAudibleToMetadata(bookResp, book.Asin!, "Audible");
                                 var sr = await _metadataConverters.ConvertMetadataToSearchResultAsync(meta, book.Asin!);
                                 sr.IsEnriched = true;
@@ -765,23 +757,9 @@ namespace Listenarr.Application.Search
                                 if (detailedMetaByAsin.TryGetValue(book.Asin!, out var found)) bookResp = found;
                                 if (bookResp == null)
                                 {
-                                    bookResp = new AudibleBookResponse
-                                    {
-                                        Asin = book.Asin,
-                                        Title = book.Title,
-                                        Subtitle = book.Subtitle,
-                                        Authors = book.Authors,
-                                        ImageUrl = book.ImageUrl,
-                                        Language = book.Language,
-                                        BookFormat = book.BookFormat,
-                                        Genres = book.Genres,
-                                        Series = book.Series,
-                                        Publisher = book.Publisher,
-                                        Narrators = book.Narrators,
-                                        ReleaseDate = book.ReleaseDate,
-                                        Isbn = null
-                                    };
+                                    bookResp = ToAudibleBookResponse(book, region);
                                 }
+                                bookResp.Region ??= region;
                                 try
                                 {
                                     var meta = _metadataConverters.ConvertAudibleToMetadata(bookResp, book.Asin!, "Audible");
@@ -811,21 +789,7 @@ namespace Listenarr.Application.Search
                             if (!string.IsNullOrWhiteSpace(language)) titleFiltered = titleFiltered.Where(b => string.IsNullOrWhiteSpace(b.Language) || string.Equals(b.Language, language, StringComparison.OrdinalIgnoreCase));
                             foreach (var book in titleFiltered.Where(book => !string.IsNullOrWhiteSpace(book.Asin)))
                             {
-                                var bookResp = new AudibleBookResponse
-                                {
-                                    Asin = book.Asin,
-                                    Title = book.Title,
-                                    Subtitle = book.Subtitle,
-                                    Authors = book.Authors,
-                                    ImageUrl = book.ImageUrl,
-                                    Language = book.Language,
-                                    BookFormat = book.BookFormat,
-                                    Genres = book.Genres,
-                                    Series = book.Series,
-                                    Publisher = book.Publisher,
-                                    Narrators = book.Narrators,
-                                    ReleaseDate = book.ReleaseDate
-                                };
+                                var bookResp = ToAudibleBookResponse(book, region);
                                 var meta = _metadataConverters.ConvertAudibleToMetadata(bookResp, book.Asin!, "Audible");
                                 var sr = await _metadataConverters.ConvertMetadataToSearchResultAsync(meta, book.Asin!);
                                 sr.IsEnriched = true;
@@ -848,21 +812,7 @@ namespace Listenarr.Application.Search
                             if (!string.IsNullOrWhiteSpace(language)) simpleFiltered = simpleFiltered.Where(b => string.IsNullOrWhiteSpace(b.Language) || string.Equals(b.Language, language, StringComparison.OrdinalIgnoreCase));
                             foreach (var book in simpleFiltered.Where(book => !string.IsNullOrWhiteSpace(book.Asin)))
                             {
-                                var bookResp = new AudibleBookResponse
-                                {
-                                    Asin = book.Asin,
-                                    Title = book.Title,
-                                    Subtitle = book.Subtitle,
-                                    Authors = book.Authors,
-                                    ImageUrl = book.ImageUrl,
-                                    Language = book.Language,
-                                    BookFormat = book.BookFormat,
-                                    Genres = book.Genres,
-                                    Series = book.Series,
-                                    Publisher = book.Publisher,
-                                    Narrators = book.Narrators,
-                                    ReleaseDate = book.ReleaseDate
-                                };
+                                var bookResp = ToAudibleBookResponse(book, region);
                                 var meta = _metadataConverters.ConvertAudibleToMetadata(bookResp, book.Asin!, "Audible");
                                 var sr = await _metadataConverters.ConvertMetadataToSearchResultAsync(meta, book.Asin!);
                                 sr.IsEnriched = true;
@@ -4199,4 +4149,3 @@ namespace Listenarr.Application.Search
         }
     }
 }
-

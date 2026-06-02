@@ -65,6 +65,5 @@ This file contains Claude-specific guidance for the Listenarr audiobook manageme
 4. Check SignalR events are handled in frontend stores
 5. Run `npm run dev` to test both services together
 6. Use `tests/Builders` with fluent `.With...().Build()` chains for coherent backend test fixtures; add a focused builder when one is missing instead of using repeated multi-property inline object initializers
-7. Update `CHANGELOG.md` after meaningful changes (see [CLAUDE.md](CLAUDE.md) for changelog format)
 
 For detailed architecture, API endpoints, and comprehensive patterns, see [copilot-instructions.md](copilot-instructions.md).

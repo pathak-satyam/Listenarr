@@ -79,6 +79,21 @@ namespace Listenarr.Api.Controllers
             return $"https://{MarketDomainResolver.GetAudibleDomain(region)}";
         }
 
+        private static string GetAmazonBaseUrl(string? region)
+        {
+            return $"https://{MarketDomainResolver.GetAmazonDomain(region)}";
+        }
+
+        private static string GetMetadataSourceBaseUrl(string? source, string? region)
+        {
+            var isAmazon = source?.Contains("amazon", StringComparison.OrdinalIgnoreCase) == true;
+            var isAudible = source?.Contains("audible", StringComparison.OrdinalIgnoreCase) == true;
+
+            return isAmazon && !isAudible
+                ? GetAmazonBaseUrl(region)
+                : GetAudibleBaseUrl(region);
+        }
+
         private static bool IsAudibleUrl(string? url)
         {
             if (string.IsNullOrWhiteSpace(url)) return false;
@@ -786,7 +801,14 @@ namespace Listenarr.Api.Controllers
                         {
                             // Map to API endpoint even if not cached to keep behaviour consistent
                             imageUrl = BuildApiImagePath(aud.Asin);
-                            _ = _imageCacheService.DownloadAndCacheImageAsync(aud.ImageUrl ?? imageUrl, aud.Asin);
+                            try
+                            {
+                                await _imageCacheService.DownloadAndCacheImageAsync(aud.ImageUrl ?? imageUrl, aud.Asin).ConfigureAwait(false);
+                            }
+                            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                            {
+                                _logger.LogDebug(ex, "Background image cache attempt failed for ASIN {Asin}", aud.Asin);
+                            }
                         }
                     }
                 }
@@ -1103,13 +1125,6 @@ namespace Listenarr.Api.Controllers
                     System.Diagnostics.Debug.WriteLine($"SearchController IntelligentSearch debug logging failed: {ex.Message}");
                 }
 
-                // Also emit a warning-level log so test output captures the value
-                try { _logger.LogWarning("[DBG] IntelligentSearch called with query='{Query}'", LogRedaction.SanitizeText(query ?? "<null>")); }
-                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
-                {
-                    System.Diagnostics.Debug.WriteLine($"SearchController IntelligentSearch warning logging failed: {ex.Message}");
-                }
-
                 if (string.IsNullOrEmpty(query))
                 {
                     return BadRequest("Query parameter is required");
@@ -1120,35 +1135,7 @@ namespace Listenarr.Api.Controllers
                 var region = await ResolveSearchRegionAsync(requestedRegion).ConfigureAwait(false);
                 var language = Request.Query.TryGetValue("language", out var languageValue) ? languageValue.ToString() : null;
                 var results = await _searchService.IntelligentSearchAsync(query, candidateLimit, returnLimit, containmentMode, requireAuthorAndPublisher, fuzzyThreshold, region, language, HttpContext.RequestAborted);
-                // Normalize images for metadata results so the SPA receives local /api/v{version}/images/{asin} when possible
-                if (_imageCacheService != null && results != null)
-                {
-                    foreach (var r in results)
-                    {
-                        try
-                        {
-                            if (r == null) continue;
-                            if (string.IsNullOrWhiteSpace(r.Asin)) continue;
-
-                            var cached = await _imageCacheService.GetCachedImagePathAsync(r.Asin);
-                            if (!string.IsNullOrWhiteSpace(cached))
-                            {
-                                r.ImageUrl = BuildApiImagePath(r.Asin);
-                                continue;
-                            }
-
-                            if (!string.IsNullOrWhiteSpace(r.ImageUrl) && (r.ImageUrl.StartsWith("http://") || r.ImageUrl.StartsWith("https://")))
-                            {
-                                var downloaded = await _imageCacheService.DownloadAndCacheImageAsync(r.ImageUrl, r.Asin);
-                                if (!string.IsNullOrWhiteSpace(downloaded)) r.ImageUrl = BuildApiImagePath(r.Asin);
-                            }
-                        }
-                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
-                        {
-                            _logger.LogWarning(ex, "Failed to normalize image for metadata result ASIN {Asin}", r.Asin);
-                        }
-                    }
-                }
+                await NormalizeMetadataSearchResultImagesAsync(results);
                 _logger.LogInformation("IntelligentSearch returning {Count} results for query: {Query}", results?.Count ?? 0, LogRedaction.SanitizeText(query));
                 return Ok(results ?? new List<MetadataSearchResult>());
             }
@@ -1445,11 +1432,13 @@ namespace Listenarr.Api.Controllers
                             Series = !string.IsNullOrEmpty(searchResult.Series) ? new[] { new { Name = searchResult.Series, Position = searchResult.SeriesNumber } } : null
                         };
 
+                        var source = searchResult.MetadataSource ?? searchResult.Source ?? "Amazon/Audible";
+
                         results.Add(new
                         {
                             metadata = metadata,
-                            source = searchResult.MetadataSource ?? searchResult.Source ?? "Amazon/Audible",
-                            sourceUrl = GetAudibleBaseUrl(region)
+                            source = source,
+                            sourceUrl = GetMetadataSourceBaseUrl(source, region)
                         });
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
@@ -1469,7 +1458,6 @@ namespace Listenarr.Api.Controllers
             }
         }
 
-        // existing code continuation
         /// <summary>
         /// Search a specific API by ID
         /// Note: This route uses a parameter and must come after all specific routes to avoid conflicts

@@ -371,22 +371,6 @@ Backend tests live under `tests/` and follow these conventions (see `tests/READM
 - **Test structure:** Follow Given / When / Then.
 - **Mock pattern:** API mocks inherit `BaseMock`. Useful helpers: `GetCallCount()`, `GetLastRequest()`, `GetLastContent()`.
 
-### Changelog Maintenance
-
-After any meaningful change (bug fix, new feature, improvement, notable refactor), update `CHANGELOG.md` at the repo root.
-
-**Where to add the entry:**
-- **Unpublished branch** (not yet merged — run `git log --oneline origin/canary..HEAD`; if commits are listed, branch is unpublished): add to a next-version section at the top, incrementing the patch number of the latest released version (e.g. `[0.2.61]` → `[0.2.62]`). Create the section if it doesn't exist. **Do not include a date** — the release pipeline adds it.
-- **Published branch** (empty output from above command): add to the topmost `## [x.y.z]` block.
-
-**Entry format:**
-```
-### Fixed          ← or Added / Changed / Removed / Security / Deprecated
-- **Short title:** One sentence explaining what changed and why it matters.
-```
-
-Skip purely mechanical changes (lock file bumps, typo fixes in comments, test fixture updates with no behavior change).
-
 ### Code Formatting Rules (enforced by pre-commit hook)
 
 The pre-commit hook runs `node scripts/lint-staged.mjs` which checks both C# and frontend formatting. **Always ensure code passes these checks before committing.**
